@@ -45,7 +45,7 @@ def extract_invoice(text: str) -> list[Field]:
     inv_num = _find(r"invoice\s*(?:no\.?|number|#)\s*[:#]?\s*([A-Z0-9][A-Z0-9\-]{2,19})", text)
     fields.append(Field("invoice_number", inv_num.group(1) if inv_num else None, 0.8 if inv_num else 0.0))
     fields.append(_field_from_match("invoice_date", _find(DATE_RE, text)))
-    vendor = _find(r"(?:from|vendor|company)\s*[:\-]?\s*([A-Z][A-Za-z0-9&,\.\s]{2,40})", text)
+    vendor = _find(r"(?:from|vendor|company)\s*[:\-]?\s*([A-Z][A-Za-z0-9&,\. ]{2,40})", text)
     fields.append(Field("vendor", vendor.group(1).strip() if vendor else None, 0.55 if vendor else 0.0))
     totals = re.findall(MONEY_RE, text)
     fields.append(Field("total_amount", totals[-1] if totals else None, 0.75 if totals else 0.0))
@@ -70,7 +70,7 @@ def extract_cv(text: str) -> list[Field]:
 def extract_contract(text: str) -> list[Field]:
     fields = []
     fields.append(_field_from_match("effective_date", _find(r"effective\s*date\s*[:\-]?\s*" + DATE_RE, text), 0.75))
-    parties = re.findall(r"between\s+([A-Z][A-Za-z0-9&,\.\s]{2,40})\s+and\s+([A-Z][A-Za-z0-9&,\.\s]{2,40})", text)
+    parties = re.findall(r"between\s+([A-Z][A-Za-z0-9&,\. ]{2,40})\s+and\s+([A-Z][A-Za-z0-9&,\. ]{2,40})", text)
     if parties:
         fields.append(Field("party_a", parties[0][0].strip(), 0.6))
         fields.append(Field("party_b", parties[0][1].strip(), 0.6))
@@ -87,7 +87,7 @@ def extract_receipt(text: str) -> list[Field]:
     fields.append(_field_from_match("date", _find(DATE_RE, text)))
     totals = re.findall(MONEY_RE, text)
     fields.append(Field("total_amount", totals[-1] if totals else None, 0.8 if totals else 0.0))
-    merchant_match = re.match(r"\s*([A-Z][A-Za-z0-9&,\.\s]{2,40})", text.strip())
+    merchant_match = re.match(r"\s*([A-Z][A-Za-z0-9&,\. ]{2,40})", text.strip())
     fields.append(Field("merchant", merchant_match.group(1).strip() if merchant_match else None, 0.4 if merchant_match else 0.0))
     return fields
 
