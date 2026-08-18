@@ -1,51 +1,44 @@
 # DocMind AI
 
-**Multimodal document intelligence platform.** Upload an invoice, CV, contract, or receipt (PDF, scanned image, or plain text) and get back structured, field-level data with per-field confidence scores, validation warnings, and a human-review loop for anything the system isn't sure about.
+[![tests](https://github.com/Sanchitrana448/docmind-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Sanchitrana448/docmind-ai/actions/workflows/ci.yml)
 
-Uses **real OCR** (Tesseract + Poppler) for scanned documents, and native PDF text extraction (instant, 100% accurate) whenever a text layer is already present — no unnecessary OCR calls.
+Live: https://docmind-ai-8uct.onrender.com  
+*(free tier, so it may take ~50s to wake outside weekday daytime)*
 
-## Why this project exists
+Upload an invoice, CV, contract or receipt (PDF, scan, or plain text) and get structured fields back, each with its own confidence score and the snippet it came from.
 
-Document AI is one of the highest-value, most commonly interviewed-for AI engineering domains (invoice processing, KYC, resume parsing, contract review). This project demonstrates the full production pattern: extraction → confidence scoring → validation → human-in-the-loop correction, not just "run OCR and hope."
+## Why the confidence scores matter
 
-## Pipeline
+While testing this against a generated receipt image, Tesseract read `$24.50` as `$2450`. A dropped decimal point, which is one of the most common and most expensive OCR failures, because the output is still a perfectly valid-looking number.
 
-```
-Upload
-  │
-  ▼
-Text extraction   → native PDF text layer, OR Tesseract OCR for scans/images
-  │
-  ▼
-Classification    → rule-based document-type classifier (invoice/CV/contract/receipt/...)
-  │
-  ▼
-Field extraction   → type-specific regex/heuristic extractors
-  │
-  ▼
-Validation           → sanity-checks dates, amounts
-  │
-  ▼
-Confidence scoring     → per-field + OCR-level confidence
-  │
-  ▼
-Human review flag        → low-confidence documents routed for correction
-  │
-  ▼
-Correction feedback loop   → POST /documents/{id}/review persists human corrections
-```
+The pipeline caught it. The amount validator saw a malformed value, set `needs_review: true`, and routed the document to the correction endpoint instead of returning it as clean data. Posting the corrected value to `/documents/{id}/review` overwrote the field and bumped its confidence to 1.0 as human-verified.
 
-## Run it
+That behaviour is the whole point of the project. Extraction accuracy is a solved-ish problem; knowing when you got it wrong is not. A pipeline that silently returns `$2450` is worse than one that refuses to answer.
+
+## How it works
+
+Text extraction picks a strategy per file:
+
+- PDF with a text layer, use it directly. No OCR, instant, exact.
+- PDF without one, rasterize at 200 DPI via Poppler, then OCR.
+- Image, straight to Tesseract.
+- Anything else, decode as UTF-8.
+
+Then classification (keyword scoring across invoice / CV / contract / receipt / report / form), type-specific field extraction, validation, confidence scoring, and a review flag if anything looks off.
+
+Confidence is per field, not per document. `email` extracted by regex scores 0.95; `merchant` guessed from the first line of a receipt scores 0.4, because that heuristic is genuinely weak and the score should say so.
+
+## Running it
+
+Needs Tesseract and Poppler on the system:
 
 ```bash
-# System deps (already present in the Docker image):
-#   sudo apt-get install tesseract-ocr poppler-utils
+sudo apt-get install tesseract-ocr poppler-utils
 pip install -r requirements.txt
 uvicorn app.main:app --reload
-# open http://localhost:8000
 ```
 
-Docker (includes OCR system deps):
+Docker already includes both:
 
 ```bash
 docker build -t docmind .
@@ -56,14 +49,21 @@ docker run -p 8000:8000 docmind
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `POST` | `/documents` | Upload & process a document (pdf/png/jpg/txt) |
-| `GET` | `/documents/{id}` | Fetch full extraction result |
-| `POST` | `/documents/{id}/review` | Submit a human correction for a field |
-| `GET` | `/health` | Liveness check |
+| `POST` | `/documents` | Upload and process |
+| `GET` | `/documents` | List processed documents |
+| `GET` | `/documents/{id}` | Full extraction result |
+| `POST` | `/documents/{id}/review` | Submit a human correction |
+| `GET` | `/health` | Liveness |
 
-## Verified behavior
+## Review flag logic
 
-Tested end-to-end against a real generated receipt image: Tesseract OCR correctly read the merchant name and date, but misread `$24.50` as `$2450` (a genuine OCR artifact — dropped decimal point). The pipeline's own validator caught the malformed amount, set `needs_review: true`, and the `/review` endpoint successfully accepted and applied the human correction, boosting the field's confidence to 100%. This is exactly the "trust but verify" behavior expected of production document AI — it doesn't quietly ship a wrong number.
+A document gets `needs_review: true` if any of these hold:
+
+- any field scored below 0.55
+- a validator produced a warning (non-numeric amount, date with no digits)
+- mean OCR confidence came in under 0.6 and the text came from Tesseract rather than a native text layer
+
+That last condition only applies to OCR'd documents. A native PDF text layer is exact, so scoring it against an OCR confidence threshold would flag clean documents for no reason.
 
 ## Tests
 
@@ -71,15 +71,16 @@ Tested end-to-end against a real generated receipt image: Tesseract OCR correctl
 pytest tests/ -v
 ```
 
-7/7 tests covering classification (invoice/CV/unknown), field extraction (invoice numbers, CV emails/names), and end-to-end pipeline behavior including the low-confidence review flag.
+Seven tests covering classification (invoice, CV, and a gibberish input that should come back `unknown` with 0.0 confidence), field extraction for invoices and CVs, the end-to-end path on plain text, and the low-confidence review flag firing when it should.
 
-## Tech stack
+## Limitations
 
-Python · FastAPI · Tesseract OCR · pdf2image/Poppler · pypdf · Pillow · Docker · pytest.
+- Extractors are regex and heuristics, so they're brittle on unusual layouts. A layout-aware model (LayoutLM, Donut) is the real answer and is what I'd build next.
+- No bounding-box output in the UI. The OCR layer already collects per-word boxes in `ocr.py`, they just aren't drawn.
+- Everything is in memory, so processed documents don't survive a restart.
+- Single-document, synchronous. Batch throughput would need a task queue.
+- The date validator only checks that a date contains a digit. It is not a real date parser.
 
-## Case study (recruiter summary)
+## Stack
 
-**Problem:** Manual document data entry is slow and OCR-only pipelines silently ship errors.
-**Approach:** Built a classify → extract → validate → confidence-score → human-review pipeline with per-field provenance, tested against real scanned-image OCR (not just clean text).
-**Result (measured, this repo):** 7/7 automated tests passing; live OCR smoke test correctly flagged a real digit-drop OCR error for human review instead of silently accepting it.
-**What I'd do next:** replace regex extractors with a fine-tuned layout-aware model (LayoutLM/Donut), add bounding-box visualization in the frontend, and support batch processing with a task queue (Redis/Celery) for production throughput.
+Python, FastAPI, Tesseract via pytesseract, pdf2image/Poppler, pypdf, Pillow, Docker, pytest.

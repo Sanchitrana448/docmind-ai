@@ -1,9 +1,13 @@
-"""Field-level structured extraction per document type.
+"""Field-level extraction, dispatched on document type.
 
-Every extracted field is returned as {value, confidence, source_location}
-so the frontend can show provenance and a human reviewer can spot-check
-low-confidence fields — this is the core "trust but verify" UX pattern for
-production document AI.
+Fields carry {value, confidence, source_snippet} rather than a bare value. The
+snippet is what makes a low score actionable: a reviewer can see the text the
+guess came from and correct it in one pass, instead of re-reading the document
+to work out where the number came from.
+
+Confidence is per field on purpose. A regex-matched email and a merchant name
+guessed from the first line of a receipt are not equally trustworthy, and one
+document-level score would hide that.
 """
 from __future__ import annotations
 
