@@ -60,7 +60,7 @@ function render(d){
     <span class="badge">type: ${d.doc_type} (${(d.doc_type_confidence*100).toFixed(0)}%)</span>
     <span class="badge">ocr: ${d.ocr_method}</span>
     <span class="badge">ocr confidence: ${(d.ocr_confidence*100).toFixed(0)}%</span>
-    <span class="badge">$+d.needs_review ? '⚠ needs review' : '✓ auto-approved'}</span>`;
+    <span class="badge">${d.needs_review ? '⚠ needs review' : '✓ auto-approved'}</span>`;
   document.getElementById('fieldsBody').innerHTML = d.fields.map(f=>`
     <tr><td>${f.name}</td><td>${f.value ?? '<i style="color:#666">not found</i>'}</td>
     <td><span class="conf ${confClass(f.confidence)}">${(f.confidence*100).toFixed(0)}%</span></td></tr>`).join('');
