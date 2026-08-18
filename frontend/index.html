@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>DocMind AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root{--bg:#0b0f19;--panel:#121826;--border:#243044;--text:#e6ebf5;--muted:#8b98b0;--accent:#c084fc;--good:#3ddc97;--warn:#f5a623;--bad:#ff6b6b;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}
+  header{padding:24px 32px;border-bottom:1px solid var(--border);}
+  header h1{margin:0;font-size:20px;} header p{margin:4px 0 0;color:var(--muted);font-size:13px;}
+  .wrap{max-width:900px;margin:0 auto;padding:24px 32px;}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:20px;}
+  .panel h2{margin:0 0 12px;font-size:15px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  button{background:var(--accent);color:#1a0f26;border:none;border-radius:8px;padding:10px 16px;font-size:14px;cursor:pointer;font-weight:600}
+  button:hover{opacity:.9}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+  td,th{padding:8px;border-bottom:1px solid var(--border);text-align:left}
+  .conf{padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+  .conf-high{background:#123b2c;color:var(--good)}
+  .conf-med{background:#3a2e12;color:var(--warn)}
+  .conf-low{background:#3a1414;color:var(--bad)}
+  .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;background:#1b2436;color:var(--muted)}
+  .warn-box{background:#241a10;border:1px solid #4a3a1a;color:var(--warn);padding:10px;border-radius:8px;font-size:13px;margin-top:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>📄 DocMind AI</h1>
+  <p>Upload a document — invoice, CV, contract, or receipt — for automated classification and structured field extraction.</p>
+</header>
+<div class="wrap">
+  <div class="panel">
+    <h2>Upload document</h2>
+    <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.txt" />
+    <button onclick="upload()">Process document</button>
+  </div>
+  <div class="panel" id="resultPanel" style="display:none">
+    <h2>Result</h2>
+    <div id="meta"></div>
+    <table id="fieldsTable"><thead><tr><th>Field</th><th>Value</th><th>Confidence</th></tr></thead><tbody id="fieldsBody"></tbody></table>
+    <div id="warnings"></div>
+  </div>
+</div>
+<script>
+async function upload(){
+  const f = document.getElementById('fileInput').files[0];
+  if(!f) return alert('Choose a file first');
+  const fd = new FormData(); fd.append('file', f);
+  const res = await fetch('/documents', {method:'POST', body: fd});
+  const data = await res.json();
+  if(!res.ok){ alert(data.detail || 'Error'); return; }
+  render(data);
+}
+function confClass(c){ return c >= 0.75 ? 'conf-high' : c >= 0.4 ? 'conf-med' : 'conf-low'; }
+function render(d){
+  document.getElementById('resultPanel').style.display='block';
+  document.getElementById('meta').innerHTML = `
+    <span class="badge">type: ${d.doc_type} (${(d.doc_type_confidence*100).toFixed(0)}%)</span>
+    <span class="badge">ocr: ${d.ocr_method}</span>
+    <span class="badge">ocr confidence: ${(d.ocr_confidence*100).toFixed(0)}%</span>
+    <span class="badge">$+d.needs_review ? '⚠ needs review' : '✓ auto-approved'}</span>`;
+  document.getElementById('fieldsBody').innerHTML = d.fields.map(f=>`
+    <tr><td>${f.name}</td><td>${f.value ?? '<i style="color:#666">not found</i>'}</td>
+    <td><span class="conf ${confClass(f.confidence)}">${(f.confidence*100).toFixed(0)}%</span></td></tr>`).join('');
+  document.getElementById('warnings').innerHTML = d.validation_warnings.length
+    ? `<div class="warn-box">${d.validation_warnings.map(w=>'⚠ '+w).join('<br>')}</div>` : '';
+}
+</script>
+</body>
+</html>
