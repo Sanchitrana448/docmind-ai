@@ -74,3 +74,43 @@ def test_process_document_flags_low_confidence_for_review():
     doc = process_document("mystery.txt", sparse_text)
     assert doc.doc_type == "unknown"
     assert doc.needs_review is True
+
+
+def test_invoice_total_uses_total_line_not_subtotal():
+    text = "INVOICE\nInvoice Number: INV-1\nSubtotal: $100.00\nTotal: $110.00\nDue Date: 01/12/2026\n"
+    fields = {f.name: f for f in extract_invoice(text)}
+    assert fields["total_amount"].value == "$110.00"
+    assert fields["due_date"].value == "01/12/2026"
+
+
+def test_missing_total_is_not_replaced_by_subtotal_and_goes_to_review():
+    text = "INVOICE\nInvoice Number: INV-1\nInvoice Date: 03/11/2026\nSubtotal: $100.00\nTotal: TBC\n"
+    result = process_document("inv.txt", text.encode())
+    fields = {f["name"]: f for f in result.fields}
+    assert fields["total_amount"]["value"] is None
+    assert result.needs_review
+
+
+def test_dropped_decimal_total_is_flagged_for_review():
+    text = "INVOICE\nInvoice Number: INV-1\nInvoice Date: 03/11/2026\nTotal: $2450\n"
+    result = process_document("inv.txt", text.encode())
+    assert result.needs_review
+
+
+def test_cv_name_field_is_not_validated_as_a_date():
+    result = process_document("cv.txt", CV_TEXT.encode())
+    assert not any("candidate_name" in w for w in result.validation_warnings)
+
+
+def test_sample_endpoints_and_review_roundtrip():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    client = TestClient(app)
+    doc = client.post("/samples/invoice-bad-amount").json()
+    assert doc["needs_review"]
+    fixed = client.post(f"/documents/{doc['id']}/review", json={"field_name": "total_amount", "corrected_value": "$1,320.00"}).json()
+    amount = next(f for f in fixed["fields"] if f["name"] == "total_amount")
+    assert amount["confidence"] == 1.0 and amount["value"] == "$1,320.00"
+    assert client.post("/samples/nope").status_code == 404

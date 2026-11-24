@@ -1,9 +1,11 @@
 # DocMind AI
 
-[![tests](https://github.com/Sanchitrana448/docmind-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Sanchitrana448/docmind-ai/actions/workflows/ci.yml)
+[![tests](https://github.com/Sanchitrana448/docmind-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Sanchitrana448/docmind-ai/actions/workflows/ci.yml) [![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
 
 Live: https://docmind-ai-8uct.onrender.com  
 *(free tier, so it may take ~50s to wake outside weekday daytime)*
+
+**Try it in one click:** open the live demo and press a sample button. "Receipt image (real OCR)" generates a PNG and runs it through Tesseract.
 
 Upload an invoice, CV, contract or receipt (PDF, scan, or plain text) and get structured fields back, each with its own confidence score and the snippet it came from.
 
@@ -11,7 +13,7 @@ Upload an invoice, CV, contract or receipt (PDF, scan, or plain text) and get st
 
 While testing this against a generated receipt image, Tesseract read `$24.50` as `$2450`. A dropped decimal point, which is one of the most common and most expensive OCR failures, because the output is still a perfectly valid-looking number.
 
-The pipeline caught it. The amount validator saw a malformed value, set `needs_review: true`, and routed the document to the correction endpoint instead of returning it as clean data. Posting the corrected value to `/documents/{id}/review` overwrote the field and bumped its confidence to 1.0 as human-verified.
+The pipeline caught it. The money pattern requires two decimal places, so `$2450` does not match; the total comes back empty with confidence 0, `needs_review` is set, and the document is routed to the correction endpoint instead of being returned as clean data. `eval/run_eval.py` injects dropped-decimal totals into generated invoices to check this path stays covered. Posting the corrected value to `/documents/{id}/review` overwrote the field and bumped its confidence to 1.0 as human-verified.
 
 That behaviour is the whole point of the project. Extraction accuracy is a solved-ish problem; knowing when you got it wrong is not. A pipeline that silently returns `$2450` is worse than one that refuses to answer.
 
@@ -53,6 +55,8 @@ docker run -p 8000:8000 docmind
 | `GET` | `/documents` | List processed documents |
 | `GET` | `/documents/{id}` | Full extraction result |
 | `POST` | `/documents/{id}/review` | Submit a human correction |
+| `GET` | `/samples` | List built-in sample documents |
+| `POST` | `/samples/{name}` | Process a built-in sample (the receipt is a generated image, so it uses OCR) |
 | `GET` | `/health` | Liveness |
 
 ## Review flag logic
@@ -71,7 +75,15 @@ That last condition only applies to OCR'd documents. A native PDF text layer is 
 pytest tests/ -v
 ```
 
-Seven tests covering classification (invoice, CV, and a gibberish input that should come back `unknown` with 0.0 confidence), field extraction for invoices and CVs, the end-to-end path on plain text, and the low-confidence review flag firing when it should.
+Twelve tests covering classification (invoice, CV, and a gibberish input that should come back `unknown` with 0.0 confidence), field extraction for invoices and CVs, the end-to-end path on plain text, the low-confidence review flag firing when it should, and regressions for the bugs the eval found: the total taken from the Subtotal line, a missing total replaced by another amount, a dropped-decimal total, and the CV name field being validated as a date.
+
+## Evaluation
+
+```
+python eval/run_eval.py
+```
+
+Generates 32 documents with known ground truth (seeded), including receipt images degraded by downscaling and blur, runs them through the real pipeline and writes [RESULTS.md](RESULTS.md). The number to read is the **silent error count**: wrong totals or dates that were not sent to review. CI runs it and fails if that is above zero. The documents are templated and synthetic, so treat accuracy as a floor on messiness, not a real-world estimate.
 
 ## Limitations
 

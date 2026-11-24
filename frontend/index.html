@@ -23,6 +23,9 @@
   .conf-low{background:#3a1414;color:var(--bad)}
   .badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;background:#1b2436;color:var(--muted)}
   .warn-box{background:#241a10;border:1px solid #4a3a1a;color:var(--warn);padding:10px;border-radius:8px;font-size:13px;margin-top:10px}
+  button.sample{margin-right:8px;margin-top:8px}
+  .fix input{background:#0d1320;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;width:110px}
+  .fix button{padding:4px 10px;font-size:12px;margin-left:4px}
 </style>
 </head>
 <body>
@@ -32,7 +35,15 @@
 </header>
 <div class="wrap">
   <div class="panel">
-    <h2>Upload document</h2>
+    <h2>Try a sample</h2>
+    <button class="sample" onclick="sample('invoice')">Clean invoice</button>
+    <button class="sample" onclick="sample('invoice-bad-amount')">Invoice with a bad amount</button>
+    <button class="sample" onclick="sample('receipt-image')">Receipt image (real OCR)</button>
+    <button class="sample" onclick="sample('cv')">CV</button>
+    <p style="color:var(--muted);font-size:12px;margin:8px 0 0">Low-confidence fields get an input so you can submit a correction, which sets that field to 100% (human-verified).</p>
+  </div>
+  <div class="panel">
+    <h2>Or upload your own document</h2>
     <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.txt" />
     <button onclick="upload()">Process document</button>
   </div>
@@ -44,6 +55,21 @@
   </div>
 </div>
 <script>
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let currentId = null;
+async function sample(name){
+  const res = await fetch('/samples/'+name, {method:'POST'});
+  const data = await res.json();
+  if(!res.ok){ alert(data.detail || 'Error'); return; }
+  render(data);
+}
+async function correct(field){
+  const v = document.getElementById('fix-'+field).value;
+  if(!v.trim()) return;
+  const res = await fetch('/documents/'+currentId+'/review', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({field_name: field, corrected_value: v})});
+  const data = await res.json();
+  if(res.ok) render(data);
+}
 async function upload(){
   const f = document.getElementById('fileInput').files[0];
   if(!f) return alert('Choose a file first');
@@ -55,17 +81,19 @@ async function upload(){
 }
 function confClass(c){ return c >= 0.75 ? 'conf-high' : c >= 0.4 ? 'conf-med' : 'conf-low'; }
 function render(d){
+  currentId = d.id;
   document.getElementById('resultPanel').style.display='block';
   document.getElementById('meta').innerHTML = `
-    <span class="badge">type: ${d.doc_type} (${(d.doc_type_confidence*100).toFixed(0)}%)</span>
-    <span class="badge">ocr: ${d.ocr_method}</span>
+    <span class="badge">type: ${esc(d.doc_type)} (${(d.doc_type_confidence*100).toFixed(0)}%)</span>
+    <span class="badge">ocr: ${esc(d.ocr_method)}</span>
     <span class="badge">ocr confidence: ${(d.ocr_confidence*100).toFixed(0)}%</span>
     <span class="badge">${d.needs_review ? '⚠ needs review' : '✓ auto-approved'}</span>`;
   document.getElementById('fieldsBody').innerHTML = d.fields.map(f=>`
-    <tr><td>${f.name}</td><td>${f.value ?? '<i style="color:#666">not found</i>'}</td>
-    <td><span class="conf ${confClass(f.confidence)}">${(f.confidence*100).toFixed(0)}%</span></td></tr>`).join('');
+    <tr><td>${esc(f.name)}</td><td>${f.value == null ? '<i style="color:#666">not found</i>' : esc(f.value)}</td>
+    <td><span class="conf ${confClass(f.confidence)}">${(f.confidence*100).toFixed(0)}%</span>
+    ${f.confidence < 0.55 ? `<span class="fix"><input id="fix-${esc(f.name)}" placeholder="correct value"><button onclick="correct('${esc(f.name)}')">Fix</button></span>` : ''}</td></tr>`).join('');
   document.getElementById('warnings').innerHTML = d.validation_warnings.length
-    ? `<div class="warn-box">${d.validation_warnings.map(w=>'⚠ '+w).join('<br>')}</div>` : '';
+    ? `<div class="warn-box">${d.validation_warnings.map(w=>'⚠ '+esc(w)).join('<br>')}</div>` : '';
 }
 </script>
 </body>

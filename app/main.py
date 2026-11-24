@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from .samples import SAMPLE_NAMES, get_sample
 from .pipeline import ProcessedDocument, process_document
 
 logging.basicConfig(level=logging.INFO)
@@ -45,6 +46,23 @@ async def upload_document(file: UploadFile = File(...)):
     except Exception as e:
         logger.exception("processing failed")
         raise HTTPException(500, f"Processing failed: {e}")
+    DOCS[result.id] = result
+    return asdict(result)
+
+
+@app.get("/samples")
+def list_samples():
+    return SAMPLE_NAMES
+
+
+@app.post("/samples/{name}")
+def process_sample(name: str):
+    """Process a built-in sample document (the receipt is a generated image, so it goes through OCR)."""
+    try:
+        filename, content = get_sample(name)
+    except KeyError:
+        raise HTTPException(404, f"Unknown sample. Choose from {SAMPLE_NAMES}")
+    result = process_document(filename, content)
     DOCS[result.id] = result
     return asdict(result)
 

@@ -32,11 +32,11 @@ def _validate(fields: List[extractors.Field]) -> List[str]:
     for f in fields:
         if f.value is None:
             continue
-        if "date" in f.name and f.value:
+        if (f.name == "date" or f.name.endswith("_date")) and f.value:
             # very light sanity check — not a full date parser
             if not any(ch.isdigit() for ch in f.value):
                 warnings.append(f"Field '{f.name}' does not look like a valid date: '{f.value}'")
-        if "amount" in f.name and f.value:
+        if f.name.endswith("_amount") and f.value:
             digits = "".join(ch for ch in f.value if ch.isdigit() or ch == ".")
             if not digits:
                 warnings.append(f"Field '{f.name}' does not contain a numeric amount: '{f.value}'")

@@ -47,11 +47,29 @@ def extract_invoice(text: str) -> list[Field]:
     fields.append(_field_from_match("invoice_date", _find(DATE_RE, text)))
     vendor = _find(r"(?:from|vendor|company)\s*[:\-]?\s*([A-Z][A-Za-z0-9&,\. ]{2,40})", text)
     fields.append(Field("vendor", vendor.group(1).strip() if vendor else None, 0.55 if vendor else 0.0))
-    totals = re.findall(MONEY_RE, text)
-    fields.append(Field("total_amount", totals[-1] if totals else None, 0.75 if totals else 0.0))
+    fields.append(_invoice_total(text))
     due = _find(r"due\s*date\s*[:\-]?\s*" + DATE_RE, text)
-    fields.append(_field_from_match("due_date", due, 0.7))
+    fields.append(
+        Field("due_date", due.group(1).strip() if due else None, 0.7 if due else 0.0, due.group(0) if due else "")
+    )
     return fields
+
+
+def _invoice_total(text: str) -> Field:
+    """Prefer the amount on the line labelled Total (not Subtotal).
+
+    If a Total line exists but holds no valid amount, return an empty field so
+    the document goes to review. Silently falling back to another number on the
+    page (the subtotal, say) would return a clean-looking wrong answer.
+    """
+    labelled = re.search(r"(?<![A-Za-z])total(?:\s+(?:due|amount))?\s*[:\-]?\s*(" + MONEY_RE + r")", text, re.IGNORECASE)
+    if labelled:
+        return Field("total_amount", labelled.group(1).strip(), 0.75, labelled.group(0))
+    if re.search(r"(?<![A-Za-z])total\b", text, re.IGNORECASE):
+        return Field("total_amount", None, 0.0)
+    totals = re.findall(MONEY_RE, text)
+    # No Total label at all: the last amount is a guess, so score it below the review threshold.
+    return Field("total_amount", totals[-1] if totals else None, 0.5 if totals else 0.0)
 
 
 def extract_cv(text: str) -> list[Field]:
