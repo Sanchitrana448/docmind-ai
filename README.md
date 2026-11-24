@@ -9,6 +9,14 @@ Live: https://docmind-ai-8uct.onrender.com
 
 Upload an invoice, CV, contract or receipt (PDF, scan, or plain text) and get structured fields back, each with its own confidence score and the snippet it came from.
 
+## Screenshots
+
+![DocMind flagging an invoice whose total amount was not found](docs/review-flag.png)
+*"Invoice with a bad amount" sample: the missing total gets 0% confidence, the document is marked "needs review", and the field has an input for a human correction.*
+
+![DocMind reading a receipt image with Tesseract OCR](docs/receipt-ocr.png)
+*Real OCR on a generated receipt image (Tesseract, 94% OCR confidence). The weak merchant field (40%) is flagged for review rather than trusted.*
+
 ## Why the confidence scores matter
 
 While testing this against a generated receipt image, Tesseract read `$24.50` as `$2450`. A dropped decimal point, which is one of the most common and most expensive OCR failures, because the output is still a perfectly valid-looking number.
